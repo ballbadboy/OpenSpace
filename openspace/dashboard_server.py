@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from functools import wraps
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from flask import Flask, abort, jsonify, send_from_directory, url_for
+from flask import Flask, abort, jsonify, send_from_directory, url_for, request
 
 from openspace.recording.action_recorder import analyze_agent_actions, load_agent_actions
 from openspace.recording.utils import load_recording_session
@@ -61,6 +63,32 @@ _STORE: SkillStore | None = None
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
 
+    # SECURITY: Authentication middleware
+    API_KEY = os.environ.get('OPENSPACE_API_KEY', None)
+
+    def require_auth(f):
+        """Decorator to require API key authentication for sensitive endpoints."""
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Allow health check and static files without auth
+            if request.path.endswith(('.js', '.css', '.html', '.json', '.png', '.svg')):
+                return f(*args, **kwargs)
+            if request.path == f"{API_PREFIX}/health":
+                return f(*args, **kwargs)
+
+            # Require API key for all other API endpoints
+            if API_KEY:
+                auth_header = request.headers.get('Authorization', '')
+                if not auth_header.startswith('Bearer '):
+                    return jsonify({'error': 'Missing or invalid Authorization header'}), 401
+
+                provided_key = auth_header[7:]  # Remove 'Bearer ' prefix
+                if provided_key != API_KEY:
+                    return jsonify({'error': 'Invalid API key'}), 401
+
+            return f(*args, **kwargs)
+        return decorated_function
+
     @app.route(f"{API_PREFIX}/health", methods=["GET"])
     def health() -> Any:
         workflows = _discover_workflow_dirs()
@@ -78,6 +106,7 @@ def create_app() -> Flask:
         )
 
     @app.route(f"{API_PREFIX}/overview", methods=["GET"])
+    @require_auth
     def overview() -> Any:
         store = _get_store()
         skills = list(store.load_all(active_only=False).values())
@@ -116,6 +145,7 @@ def create_app() -> Flask:
         )
 
     @app.route(f"{API_PREFIX}/skills", methods=["GET"])
+    @require_auth
     def list_skills() -> Any:
         store = _get_store()
         active_only = _bool_arg("active_only", True)
@@ -136,12 +166,14 @@ def create_app() -> Flask:
         return jsonify({"items": items, "count": len(items), "active_only": active_only})
 
     @app.route(f"{API_PREFIX}/skills/stats", methods=["GET"])
+    @require_auth
     def skill_stats() -> Any:
         store = _get_store()
         skills = list(store.load_all(active_only=False).values())
         return jsonify(_build_skill_stats(store, skills))
 
     @app.route(f"{API_PREFIX}/skills/<skill_id>", methods=["GET"])
+    @require_auth
     def skill_detail(skill_id: str) -> Any:
         store = _get_store()
         record = store.load_record(skill_id)
@@ -155,6 +187,7 @@ def create_app() -> Flask:
         return jsonify(detail)
 
     @app.route(f"{API_PREFIX}/skills/<skill_id>/lineage", methods=["GET"])
+    @require_auth
     def skill_lineage(skill_id: str) -> Any:
         store = _get_store()
         if not store.load_record(skill_id):
@@ -162,6 +195,7 @@ def create_app() -> Flask:
         return jsonify(_build_lineage_payload(skill_id, store))
 
     @app.route(f"{API_PREFIX}/skills/<skill_id>/source", methods=["GET"])
+    @require_auth
     def skill_source(skill_id: str) -> Any:
         store = _get_store()
         record = store.load_record(skill_id)
@@ -170,11 +204,13 @@ def create_app() -> Flask:
         return jsonify(_load_skill_source(record))
 
     @app.route(f"{API_PREFIX}/workflows", methods=["GET"])
+    @require_auth
     def list_workflows() -> Any:
         items = [_build_workflow_summary(path) for path in _discover_workflow_dirs()]
         return jsonify({"items": items, "count": len(items)})
 
     @app.route(f"{API_PREFIX}/workflows/<workflow_id>", methods=["GET"])
+    @require_auth
     def workflow_detail(workflow_id: str) -> Any:
         workflow_dir = _get_workflow_dir(workflow_id)
         if not workflow_dir:
@@ -219,6 +255,7 @@ def create_app() -> Flask:
         )
 
     @app.route(f"{API_PREFIX}/workflows/<workflow_id>/artifacts/<path:artifact_path>", methods=["GET"])
+    @require_auth
     def workflow_artifact(workflow_id: str, artifact_path: str) -> Any:
         workflow_dir = _get_workflow_dir(workflow_id)
         if not workflow_dir:
@@ -233,7 +270,9 @@ def create_app() -> Flask:
         return send_from_directory(str(target.parent), target.name)
 
     @app.route("/", defaults={"path": ""})
+    @require_auth
     @app.route("/<path:path>")
+    @require_auth
     def serve_frontend(path: str) -> Any:
         if path.startswith("api/"):
             abort(404)

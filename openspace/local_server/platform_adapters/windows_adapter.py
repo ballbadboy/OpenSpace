@@ -265,12 +265,12 @@ class WindowsAdapter:
             # Get basic attributes
             try:
                 result['class_name'] = element.class_name()
-            except:
+            except Exception:
                 result['class_name'] = 'unknown'
             
             try:
                 result['name'] = element.window_text()
-            except:
+            except Exception:
                 result['name'] = ''
             
             # Get states
@@ -285,7 +285,7 @@ class WindowsAdapter:
                     try:
                         method = getattr(element, method_name)
                         states[method_name] = method()
-                    except:
+                    except Exception:
                         pass
             
             if states:
@@ -302,7 +302,7 @@ class WindowsAdapter:
                     'width': rectangle.width(),
                     'height': rectangle.height()
                 }
-            except:
+            except Exception:
                 pass
             
             # Recursively get child elements
@@ -438,7 +438,7 @@ class WindowsAdapter:
                 user32 = ctypes.windll.user32
                 width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
                 height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
-            except:
+            except Exception:
                 width, height = 1920, 1080
             
             command = [
@@ -499,7 +499,7 @@ class WindowsAdapter:
             import signal
             try:
                 process.send_signal(signal.CTRL_C_EVENT)
-            except:
+            except Exception:
                 process.terminate()
                 
             try:

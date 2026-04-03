@@ -12,6 +12,7 @@ import pyautogui
 import threading
 from io import BytesIO
 import tempfile
+from functools import wraps
 
 from openspace.utils.logging import Logger
 from openspace.local_server.utils import AccessibilityHelper, ScreenshotHelper
@@ -46,6 +47,30 @@ feature_checker = FeatureChecker(
     platform_adapter=platform_adapter,
     accessibility_helper=accessibility_helper
 )
+
+# SECURITY: Authentication middleware
+API_KEY = os.environ.get('OPENSPACE_API_KEY', None)
+
+def require_auth(f):
+    """Decorator to require API key authentication for sensitive endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Allow health check without auth
+        if request.path == '/':
+            return f(*args, **kwargs)
+
+        # Require API key for all sensitive operations
+        if API_KEY:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'Missing or invalid Authorization header'}), 401
+
+            provided_key = auth_header[7:]  # Remove 'Bearer ' prefix
+            if provided_key != API_KEY:
+                return jsonify({'error': 'Invalid API key'}), 401
+
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def get_conda_activation_prefix(conda_env: str = None) -> str:
@@ -190,6 +215,7 @@ def get_platform():
 
 @app.route('/execute', methods=['POST'])
 @app.route('/setup/execute', methods=['POST'])
+@require_auth
 def execute_command():
     data = request.json
     # The 'command' key in the JSON request should contain the command to be executed.
@@ -247,6 +273,7 @@ def execute_command():
 
 @app.route('/execute_with_verification', methods=['POST'])
 @app.route('/setup/execute_with_verification', methods=['POST'])
+@require_auth
 def execute_command_with_verification():
     """Execute command and verify the result based on provided verification criteria"""
     data = request.json
@@ -320,7 +347,7 @@ def execute_command_with_verification():
                         windows = platform_adapter.list_windows() if hasattr(platform_adapter, 'list_windows') else []
                         if not any(window_name.lower() in str(w).lower() for w in windows):
                             verification_passed = False
-                except:
+                except Exception:
                     verification_passed = False
             
             # Check command execution if specified
@@ -339,7 +366,7 @@ def execute_command_with_verification():
                     )
                     if verify_result.returncode != 0:
                         verification_passed = False
-                except:
+                except Exception:
                     verification_passed = False
             
             if verification_passed:
@@ -383,6 +410,7 @@ def _get_machine_architecture() -> str:
         return 'unknown'
 
 @app.route('/setup/launch', methods=["POST"])
+@require_auth
 def launch_app():
     data = request.json
     shell = data.get("shell", False)
@@ -420,6 +448,7 @@ def launch_app():
         }), 500
 
 @app.route("/run_python", methods=['POST'])
+@require_auth
 def run_python():
     data = request.json
     code = data.get('code', None)
@@ -521,6 +550,7 @@ def run_python():
         }), 500
 
 @app.route("/run_bash_script", methods=['POST'])
+@require_auth
 def run_bash_script():
     data = request.json
     script = data.get('script', None)
@@ -589,7 +619,7 @@ def run_bash_script():
         if os.path.exists(temp_filename):
             try:
                 os.unlink(temp_filename)
-            except:
+            except Exception:
                 pass
         return jsonify({
             'status': 'error',
@@ -599,6 +629,7 @@ def run_bash_script():
         }), 500
         
 @app.route('/screenshot', methods=['GET'])
+@require_auth
 def capture_screen_with_cursor():
     """Capture screenshot (including mouse cursor)"""
     try:
@@ -621,6 +652,7 @@ def capture_screen_with_cursor():
         }), 500
 
 @app.route('/cursor_position', methods=['GET'])
+@require_auth
 def get_cursor_position():
     """Get cursor position"""
     try:
@@ -630,6 +662,7 @@ def get_cursor_position():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/screen_size', methods=['POST', 'GET'])
+@require_auth
 def get_screen_size():
     """Get screen size"""
     try:
@@ -640,6 +673,7 @@ def get_screen_size():
 
 # Accessibility Tree
 @app.route("/accessibility", methods=["GET"])
+@require_auth
 def get_accessibility_tree():
     """Get accessibility tree"""
     try:
@@ -655,6 +689,7 @@ def get_accessibility_tree():
 
 # File Operations
 @app.route('/list_directory', methods=['POST'])
+@require_auth
 def list_directory():
     """List directory contents"""
     data = request.json
@@ -685,6 +720,7 @@ def list_directory():
         }), 500
 
 @app.route('/file', methods=['POST'])
+@require_auth
 def file_operation():
     """File operations"""
     data = request.json
@@ -722,6 +758,7 @@ def file_operation():
         }), 500
 
 @app.route('/desktop_path', methods=['POST', 'GET'])
+@require_auth
 def get_desktop_path():
     """Get desktop path"""
     try:
@@ -737,6 +774,7 @@ def get_desktop_path():
         }), 500
 
 @app.route("/setup/activate_window", methods=['POST'])
+@require_auth
 def activate_window():
     """Activate window"""
     data = request.json
@@ -764,6 +802,7 @@ def activate_window():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route("/setup/close_window", methods=["POST"])
+@require_auth
 def close_window():
     """Close window"""
     data = request.json
@@ -791,6 +830,7 @@ def close_window():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/window_size', methods=['POST'])
+@require_auth
 def get_window_size():
     """Get window size"""
     try:
@@ -934,7 +974,7 @@ def end_recording():
             try:
                 recording_process.kill()
                 recording_process.wait()
-            except:
+            except Exception:
                 pass
             recording_process = None
         return jsonify({

@@ -449,9 +449,17 @@ class RecordingManager:
         1. Proper JSON strings with true/false/null
         2. Python literal strings (produced by OpenAI) using ast.literal_eval
         3. Already-dict objects (returned by SDK)
+
+        SECURITY: Prevents DoS attacks from deeply nested structures or very large inputs.
         """
         if not isinstance(arg_data, str):
             return arg_data or {}
+
+        # SECURITY: Reject overly large inputs (DoS prevention)
+        MAX_ARG_SIZE = 10 * 1024  # 10 KB limit
+        if len(arg_data) > MAX_ARG_SIZE:
+            logger.debug(f"Arguments exceed max size ({len(arg_data)} > {MAX_ARG_SIZE}), returning raw string")
+            return {"raw": arg_data}
 
         # First, try JSON
         try:
@@ -459,11 +467,15 @@ class RecordingManager:
         except json.JSONDecodeError:
             pass
 
-        # Fallback to Python literal
+        # Fallback to Python literal (with size guard)
         try:
             return ast.literal_eval(arg_data)
-        except Exception:
-            logger.debug("Failed to parse arguments, returning raw string")
+        except (ValueError, SyntaxError) as e:
+            logger.debug(f"Failed to parse arguments ({type(e).__name__}), returning raw string")
+            return {"raw": arg_data}
+        except Exception as e:
+            # Catch any other exceptions from ast.literal_eval (e.g., MemoryError, RecursionError)
+            logger.warning(f"Error parsing arguments ({type(e).__name__}): {e}")
             return {"raw": arg_data}
     
     async def start(self, task_id: Optional[str] = None):
