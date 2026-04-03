@@ -88,11 +88,22 @@ _real_stdout = sys.stdout
 # drain stderr. Heavy log/print output during execute_task fills the stderr
 # pipe buffer, blocking this process on write() → deadlock → timeout.
 # Redirect stderr to a log file on Windows to prevent this.
+_stderr_file = None
 if os.name == "nt":
     _stderr_file = open(
         _LOG_DIR / "mcp_stderr.log", "a", encoding="utf-8", buffering=1
     )
     sys.stderr = _stderr_file
+
+    # SECURITY: Register cleanup handler to close file handle on exit
+    import atexit
+    def cleanup_stderr_file():
+        try:
+            if _stderr_file and not _stderr_file.closed:
+                _stderr_file.close()
+        except Exception:
+            pass
+    atexit.register(cleanup_stderr_file)
 
 sys.stdout = _MCPSafeStdout(_real_stdout, sys.stderr)
 
@@ -122,6 +133,7 @@ _standalone_store = None
 
 # Internal state: tracks bot skill directories already registered this session.
 _registered_skill_dirs: set = set()
+_registered_skill_dirs_lock = asyncio.Lock()  # Protects _registered_skill_dirs mutations
 
 _UPLOAD_META_FILENAME = ".upload_meta.json"
 
@@ -351,9 +363,11 @@ async def _auto_register_skill_dirs(skill_dirs: List[str]) -> int:
         store = _get_store()
         db_created = await store.sync_from_registry(added)
 
-    is_first = any(d not in _registered_skill_dirs for d in skill_dirs)
-    for d in skill_dirs:
-        _registered_skill_dirs.add(d)
+    # THREAD-SAFE: Protect set mutation with lock
+    async with _registered_skill_dirs_lock:
+        is_first = any(d not in _registered_skill_dirs for d in skill_dirs)
+        for d in skill_dirs:
+            _registered_skill_dirs.add(d)
 
     if added:
         action = "Auto-registered" if is_first else "Re-scanned & found"

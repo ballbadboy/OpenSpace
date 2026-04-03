@@ -115,6 +115,9 @@ def build_llm_kwargs(model: str) -> tuple[str, Dict[str, Any]]:
         final_key = kwargs.get("api_key")
         final_base = kwargs.get("api_base", "")
 
+        # NOTE: Setting environment variables as side effect for litellm compatibility.
+        # Only sets if not already present (setdefault behavior).
+        # This is necessary because litellm reads these from os.environ.
         if final_key:
             os.environ.setdefault("MINIMAX_API_KEY", final_key)
         if final_base:
@@ -208,6 +211,17 @@ def build_grounding_config_path() -> Optional[str]:
                 "Grounding config overrides written to %s (%d keys)",
                 tmp_path, len(overrides),
             )
+
+            # SECURITY: Register cleanup handler to prevent temp file leaks
+            import atexit
+            def cleanup_temp_file(path=tmp_path):
+                try:
+                    if os.path.exists(path):
+                        os.unlink(path)
+                except Exception:
+                    pass
+            atexit.register(cleanup_temp_file)
+
             return tmp_path
         except Exception as e:
             logger.warning("Failed to write config overrides: %s", e)

@@ -15,6 +15,7 @@ from openspace.recording.action_recorder import analyze_agent_actions, load_agen
 from openspace.recording.utils import load_recording_session
 from openspace.skill_engine import SkillStore
 from openspace.skill_engine.types import SkillRecord
+import time
 
 API_PREFIX = "/api/v1"
 FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -23,6 +24,10 @@ WORKFLOW_ROOTS = [
     PROJECT_ROOT / "logs" / "trajectories",
     PROJECT_ROOT / "gdpval_bench" / "results",
 ]
+
+# PERFORMANCE: Cache workflow discovery results to avoid expensive filesystem scans
+_WORKFLOW_CACHE = {"results": None, "timestamp": 0}
+_WORKFLOW_CACHE_TTL = 30  # Cache for 30 seconds
 
 PIPELINE_STAGES = [
     {
@@ -471,12 +476,27 @@ def _workflow_id(workflow_dir: Path) -> str:
 
 
 def _discover_workflow_dirs() -> List[Path]:
+    """Discover workflow directories with caching to avoid expensive filesystem scans."""
+    # PERFORMANCE: Check cache validity
+    now = time.time()
+    if (_WORKFLOW_CACHE["results"] is not None and
+        (now - _WORKFLOW_CACHE["timestamp"]) < _WORKFLOW_CACHE_TTL):
+        return _WORKFLOW_CACHE["results"]
+
+    # Scan filesystem if cache expired
     discovered: Dict[str, Path] = {}
     for root in WORKFLOW_ROOTS:
         if not root.exists():
             continue
         _scan_workflow_tree(root, discovered)
-    return sorted(discovered.values(), key=lambda item: item.stat().st_mtime, reverse=True)
+
+    results = sorted(discovered.values(), key=lambda item: item.stat().st_mtime, reverse=True)
+
+    # Update cache
+    _WORKFLOW_CACHE["results"] = results
+    _WORKFLOW_CACHE["timestamp"] = now
+
+    return results
 
 
 def _scan_workflow_tree(directory: Path, discovered: Dict[str, Path], *, _depth: int = 0, _max_depth: int = 6) -> None:
