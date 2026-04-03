@@ -1,0 +1,7 @@
+{
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"/private/tmp/code-review-openspace/openspace/skill_engine/store.py\"}",
+  "error": "File content (14583 tokens) exceeds maximum allowed tokens (10000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+  "timestamp": "2026-04-03T02:18:09.143Z",
+  "retry_count": 2
+}

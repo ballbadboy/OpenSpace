@@ -612,7 +612,8 @@ async def execute_task(
 
     except Exception as e:
         logger.error(f"execute_task failed: {e}", exc_info=True)
-        return _json_error(e, status="error", traceback=traceback.format_exc(limit=5))
+        # SECURITY: Log traceback server-side only, do not send to client
+        return _json_error(e, status="error")
 
 
 @mcp.tool()
@@ -833,7 +834,8 @@ async def fix_skill(
 
     except Exception as e:
         logger.error(f"fix_skill failed: {e}", exc_info=True)
-        return _json_error(e, status="error", traceback=traceback.format_exc(limit=5))
+        # SECURITY: Log traceback server-side only, do not send to client
+        return _json_error(e, status="error")
 
 
 @mcp.tool()
@@ -904,7 +906,8 @@ async def upload_skill(
 
     except Exception as e:
         logger.error(f"upload_skill failed: {e}", exc_info=True)
-        return _json_error(e, status="error", traceback=traceback.format_exc(limit=5))
+        # SECURITY: Log traceback server-side only, do not send to client
+        return _json_error(e, status="error")
 
 def run_mcp_server() -> None:
     """Console-script entry point for ``openspace-mcp``."""

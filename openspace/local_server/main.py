@@ -193,26 +193,27 @@ def get_platform():
 def execute_command():
     data = request.json
     # The 'command' key in the JSON request should contain the command to be executed.
-    shell = data.get('shell', False)
-    command = data.get('command', "" if shell else [])
+    # SECURITY: Do NOT allow clients to control shell parameter - always use shell=False
+    command = data.get('command', [])
     timeout = data.get('timeout', 120)
-    
-    if isinstance(command, str) and not shell:
+
+    # Parse command string into list if needed (but never with shell expansion)
+    if isinstance(command, str):
         command = shlex.split(command)
-    
+
     # Expand user directory
     if isinstance(command, list):
         for i, arg in enumerate(command):
             if arg.startswith("~/"):
                 command[i] = os.path.expanduser(arg)
-    
+
     try:
         if platform_name == "Windows":
             result = subprocess.run(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                shell=shell,
+                shell=False,
                 text=True,
                 timeout=timeout,
                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -222,7 +223,7 @@ def execute_command():
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                shell=shell,
+                shell=False,
                 text=True,
                 timeout=timeout,
             )
@@ -249,21 +250,22 @@ def execute_command():
 def execute_command_with_verification():
     """Execute command and verify the result based on provided verification criteria"""
     data = request.json
-    shell = data.get('shell', False)
-    command = data.get('command', "" if shell else [])
+    # SECURITY: Do NOT allow clients to control shell parameter - always use shell=False
+    command = data.get('command', [])
     verification = data.get('verification', {})
     max_wait_time = data.get('max_wait_time', 10) # Maximum wait time in seconds
     check_interval = data.get('check_interval', 1) # Check interval in seconds
-    
-    if isinstance(command, str) and not shell:
+
+    # Parse command string into list if needed (but never with shell expansion)
+    if isinstance(command, str):
         command = shlex.split(command)
-    
+
     # Expand user directory
     if isinstance(command, list):
         for i, arg in enumerate(command):
             if arg.startswith("~/"):
                 command[i] = os.path.expanduser(arg)
-    
+
     # Execute the main command
     try:
         if platform_name == "Windows":
@@ -271,7 +273,7 @@ def execute_command_with_verification():
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                shell=shell,
+                shell=False,
                 text=True,
                 timeout=120,
                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -281,7 +283,7 @@ def execute_command_with_verification():
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                shell=shell,
+                shell=False,
                 text=True,
                 timeout=120,
             )
@@ -325,9 +327,12 @@ def execute_command_with_verification():
             if 'command_success' in verification:
                 verify_cmd = verification['command_success']
                 try:
+                    # SECURITY: Parse command safely without shell expansion
+                    if isinstance(verify_cmd, str):
+                        verify_cmd = shlex.split(verify_cmd)
                     verify_result = subprocess.run(
                         verify_cmd,
-                        shell=True,
+                        shell=False,
                         capture_output=True,
                         text=True,
                         timeout=5
